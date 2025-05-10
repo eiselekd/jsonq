@@ -2,6 +2,7 @@ import _ from 'underscore';
 
 var jsonq;
 var jsqelem;
+var verbose=0;
 
 //################################
 // queries
@@ -9,6 +10,9 @@ var jsqelem;
   jsonq = function (items, path, parent) {
     if (items instanceof jsonq) {
       return new jsonq.fn.init([].concat(items.items));
+    }
+    if (items instanceof jsqelem) {
+      return new jsonq.fn.init([items]);
     }
     if (path === undefined) {
       path = '@';
@@ -50,13 +54,14 @@ var jsqelem;
       return item;
     },
     _step: function (step) {
-      this.items = this.items.flatMap((e)=>{
-	if (_.isArray(e.elem) && isNaN(step)) {
-	  /* non-index on a array : iterate and hash over all */
-	  return e.resolveArray().map((e)=>e.step(step));
-	}
-	return e.step(step);
-      });
+      this.items = step.split(/,/).flatMap((step)=>
+	this.items.flatMap((e)=>{
+	  if (_.isArray(e.elem) && isNaN(step)) {
+	    /* non-index on a array : iterate and hash over all */
+	    return e.resolveArray().flatMap((e_)=>e_.step(step));
+	  }
+	  return e.step(step);
+	}));
       return this;
     },
     _resolveArray: function (step) {
@@ -76,6 +81,10 @@ var jsqelem;
 	a._step(step);
       }
       return a._resolveArray();
+    },
+    unwrap: function (expectsingle=false) {
+      var a=this.items.map((e)=>e.elem);
+      return expectsingle ? a[0] : a;
     }
   };
   init.prototype = jsonq.fn; /* jquery(0) instanceof jquery === true */
@@ -102,9 +111,11 @@ var jsqelem;
       var l=0;
       var a = this.elem;
       var next = a[step];
-      console.log(`-----------\nstep:'${step}' on '${this.elem}' => ${next}`);
-      console.log(this.elem);
-      console.log(next);
+      if (verbose) {
+	console.log(`-----------\nstep:'${step}' on '${this.elem}' => ${next}`);
+	console.log(this.elem);
+	console.log(next);
+      }
       return jsqelem(next,`${this.jpath}/${step}`)
     },
     resolveArray: function() {
@@ -115,16 +126,29 @@ var jsqelem;
     },
     get: function(path) {
       var e = this.elem;
-      for (const step of path.split(/\//).filter((e)=>e!=="@")) {
+      var steps = path.split(/\//).filter((e)=>e!=="@");
+      var last = undefined;
+      if (steps.slice(-1)[0].includes(",")) {
+	last = steps.pop();
+      }
+      for (const step of steps) {
 	e = e[step];
 	if (e === undefined) {
 	  return undefined;
 	}
       }
+      if (last !== undefined) {
+	var a = [];
+	var laststeps = last.split(/,/);
+	return laststeps.map((i)=>e[i]);
+      }
       return e
+    },
+    has: function(path) {
+      return this.get(path) !== undefined;
     }
   };
   init.prototype = jsqelem.fn; /* jsonq(0) instanceof jsonq === true */
 })();
 
-export default jsonq;
+export { jsonq, jsqelem };
